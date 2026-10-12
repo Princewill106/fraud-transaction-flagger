@@ -1,0 +1,8 @@
+customer,timestamp,amount,device,beneficiary
+C001,2026-10-01T11:00:00,21000,iphone-a1,shoprite
+C002,2026-10-01T11:05:00,510000,laptop-b7,supplier-x
+C001,2026-10-02T02:14:00,350000,android-z9,crypto-otc
+C001,2026-10-02T02:16:00,40000,android-z9,crypto-otc
+C001,2026-10-02T02:17:00,40000,android-z9,crypto-otc
+C001,2026-10-02T02:19:00,40000,android-z9,crypto-otc
+C003,2026-10-02T15:00:00,60000,android-q1,school-fees

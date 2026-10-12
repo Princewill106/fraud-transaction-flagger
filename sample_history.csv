@@ -1,0 +1,10 @@
+customer,timestamp,amount,device,beneficiary
+C001,2026-09-01T10:00:00,15000,iphone-a1,shoprite
+C001,2026-09-05T12:30:00,22000,iphone-a1,landlord
+C001,2026-09-10T18:00:00,18000,iphone-a1,shoprite
+C001,2026-09-15T09:15:00,25000,iphone-a1,mum
+C001,2026-09-20T14:00:00,20000,iphone-a1,shoprite
+C002,2026-09-02T11:00:00,450000,laptop-b7,supplier-x
+C002,2026-09-09T11:30:00,520000,laptop-b7,supplier-y
+C002,2026-09-16T10:45:00,480000,laptop-b7,supplier-x
+C002,2026-09-23T11:10:00,500000,laptop-b7,supplier-y

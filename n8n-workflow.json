@@ -1,0 +1,271 @@
+{
+  "name": "Fraud Transaction Flagger (AI Automation Projects #7)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "score-transaction",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "72f30e89-02ac-5c96-b556-e650c24fe58c",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "4750bcb7-4c9d-5679-8fa0-892ce9a95ddb"
+    },
+    {
+      "parameters": {},
+      "id": "a8da72dc-e13b-54e0-9316-4cc2fa6465ba",
+      "name": "Test with sample data",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sample data from this repo. Click 'Test workflow' to run the whole flow on it.\nconst sample = [\n {\n  \"customer\": \"C001\",\n  \"timestamp\": \"2026-10-02T02:14:00\",\n  \"amount\": 350000,\n  \"device\": \"android-z9\",\n  \"beneficiary\": \"crypto-otc\",\n  \"profile\": {\n   \"mean\": 20000,\n   \"sd\": 3406,\n   \"devices\": [\n    \"iphone-a1\"\n   ],\n   \"beneficiaries\": [\n    \"shoprite\",\n    \"landlord\",\n    \"mum\"\n   ]\n  },\n  \"recent_count_10min\": 0\n },\n {\n  \"customer\": \"C001\",\n  \"timestamp\": \"2026-10-01T11:00:00\",\n  \"amount\": 21000,\n  \"device\": \"iphone-a1\",\n  \"beneficiary\": \"shoprite\",\n  \"profile\": {\n   \"mean\": 20000,\n   \"sd\": 3406,\n   \"devices\": [\n    \"iphone-a1\"\n   ],\n   \"beneficiaries\": [\n    \"shoprite\",\n    \"landlord\",\n    \"mum\"\n   ]\n  },\n  \"recent_count_10min\": 0\n },\n {\n  \"customer\": \"C001\",\n  \"timestamp\": \"2026-10-02T02:19:00\",\n  \"amount\": 40000,\n  \"device\": \"android-z9\",\n  \"beneficiary\": \"crypto-otc\",\n  \"profile\": {\n   \"mean\": 20000,\n   \"sd\": 3406,\n   \"devices\": [\n    \"iphone-a1\"\n   ],\n   \"beneficiaries\": [\n    \"shoprite\",\n    \"landlord\",\n    \"mum\"\n   ]\n  },\n  \"recent_count_10min\": 3\n }\n];\nreturn sample.map(json => ({ json }));"
+      },
+      "id": "0b563b53-f319-54d9-b049-fd5606c7ba7a",
+      "name": "Sample data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fraud Transaction Flagger: core logic (ported from main.py)\n\n// ---- input normaliser (works for Webhook, Form, WhatsApp, Gmail, Sheets and sample data)\nconst input = $input.all().flatMap(i => {\n  const j = i.json || {};\n  if (j.messages && Array.isArray(j.messages)) {           // WhatsApp Trigger\n    return j.messages.filter(m => m.text).map(m => ({ from: '+' + m.from, text: m.text.body }));\n  }\n  if (j.Subject !== undefined || j.From !== undefined) {     // Gmail Trigger (simple)\n    return [{ from: (j.From || '').replace(/.*<|>.*/g, ''), subject: j.Subject || '', body: j.snippet || j.text || '' }];\n  }\n  const b = (j.body !== undefined && j.headers !== undefined) ? j.body : j;   // Webhook wraps payload in body\n  if (Array.isArray(b)) return b;\n  if (b && Array.isArray(b.items)) return b.items;\n  return [b];\n});\n\nconst T = { step_up: 40, block: 70 };\nconst out = [];\nfor (const tx of input) {\n  const p = tx.profile, reasons = [];\n  if (!p) reasons.push([30, 'no history for customer']);\n  else {\n    const z = (tx.amount - p.mean) / (p.sd || 1);\n    if (z > 3) reasons.push([40, `amount is ${z.toFixed(1)} sd above this customer's normal`]);\n    else if (z > 2) reasons.push([20, `amount is ${z.toFixed(1)} sd above normal`]);\n    if (!p.devices.includes(tx.device)) reasons.push([20, `new device ${tx.device}`]);\n    if (!p.beneficiaries.includes(tx.beneficiary)) reasons.push([15, `first transfer to ${tx.beneficiary}`]);\n  }\n  const h = Number(tx.timestamp.slice(11, 13)); if (h >= 1 && h < 5) reasons.push([15, `unusual hour ${tx.timestamp.slice(11, 16)}`]);\n  if ((tx.recent_count_10min || 0) >= 3) reasons.push([25, `${tx.recent_count_10min + 1} transactions in 10 minutes`]);\n  const risk = reasons.reduce((s, r) => s + r[0], 0);\n  const decision = risk >= T.block ? 'BLOCK' : risk >= T.step_up ? 'STEP-UP' : 'ALLOW';\n  out.push({ route: decision, customer: tx.customer, amount: tx.amount, risk, decision, reasons: reasons.map(r => r[1]).join('; ') });\n}\nreturn out.map(json => ({ json }));\n"
+      },
+      "id": "d6b761e4-64c0-5e07-aeca-e4f337ef3cc8",
+      "name": "Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {}
+      },
+      "id": "7ade6b4e-02db-5fcb-be2c-7aadb79f589c",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c6552933-1653-5c3e-b222-2a05c51e19c2",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "BLOCK",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "BLOCK"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "00a88157-ca6f-5041-9c26-efe4ac3f798e",
+                    "leftValue": "={{ $json.route }}",
+                    "rightValue": "STEP-UP",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "STEP-UP"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6ed540ee-26ea-562d-b751-96bf1c150e96",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        720,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#fraud",
+          "mode": "name"
+        },
+        "text": "=BLOCKED {{ $json.customer }} NGN {{ $json.amount }} (risk {{ $json.risk }}): {{ $json.reasons }}",
+        "otherOptions": {}
+      },
+      "id": "ca7b380b-4512-589e-bb05-ec137fd4fa25",
+      "name": "Alert fraud team (Slack)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        980,
+        30
+      ],
+      "webhookId": "ca7b380b-4512-589e-bb05-ec137fd4fa25"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.example.com/otp/step-up",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "4e396105-dba7-5c09-83a3-9669d00ba97e",
+      "name": "Request OTP (your API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        980,
+        210
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Fraud Transaction Flagger\nRules catch the known patterns; per-customer statistics catch the strange ones.\n\nYour payment system POSTs each transaction with the customer's profile (mean and spread of amounts, known devices and beneficiaries) and the count of their transactions in the last 10 minutes. Returns ALLOW, STEP-UP or BLOCK with reasons; blocks alert the fraud team.\n\n**Try it:** click *Test workflow* to run on the sample data. Then connect your credentials on the output nodes and activate.\n\nCode and docs: github.com/Princewill106/fraud-transaction-flagger",
+        "height": 340,
+        "width": 420,
+        "color": 5
+      },
+      "id": "17b248cd-94b8-51ac-9617-f26dd1e1c18a",
+      "name": "About this workflow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -460
+      ]
+    }
+  ],
+  "connections": {
+    "Test with sample data": {
+      "main": [
+        [
+          {
+            "node": "Sample data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sample data": {
+      "main": [
+        [
+          {
+            "node": "Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Logic": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Alert fraud team (Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Request OTP (your API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
